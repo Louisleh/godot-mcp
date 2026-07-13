@@ -11,6 +11,7 @@ var _ws_server: Node
 var _message_handler: RefCounted
 var _debugger_plugin: AIBridgeDebuggerPlugin
 var _port: int = 6550
+var _owns_runtime_autoload: bool = false
 
 
 func _enter_tree() -> void:
@@ -50,6 +51,7 @@ func _exit_tree() -> void:
 		_ws_server.queue_free()
 		_ws_server = null
 	_message_handler = null
+	_remove_owned_runtime_autoload()
 
 
 func _ensure_runtime_autoload() -> void:
@@ -59,6 +61,7 @@ func _ensure_runtime_autoload() -> void:
 
 	if normalized_existing.is_empty():
 		add_autoload_singleton(RUNTIME_AUTOLOAD_NAME, RUNTIME_AUTOLOAD_PATH)
+		_owns_runtime_autoload = true
 		return
 
 	if normalized_existing != RUNTIME_AUTOLOAD_PATH:
@@ -66,6 +69,17 @@ func _ensure_runtime_autoload() -> void:
 			"[AI Bridge] Autoload name conflict for %s: %s"
 			% [RUNTIME_AUTOLOAD_NAME, existing_value]
 		)
+
+
+func _remove_owned_runtime_autoload() -> void:
+	if not _owns_runtime_autoload:
+		return
+
+	var autoload_key := "autoload/%s" % RUNTIME_AUTOLOAD_NAME
+	var existing_value := str(ProjectSettings.get_setting(autoload_key, ""))
+	if existing_value.trim_prefix("*") == RUNTIME_AUTOLOAD_PATH:
+		remove_autoload_singleton(RUNTIME_AUTOLOAD_NAME)
+	_owns_runtime_autoload = false
 
 
 func _on_message_received(peer_id: int, message: String) -> void:

@@ -59,9 +59,9 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 		"editor.save_scene":
 			return _handle_save_scene(params)
 		"editor.run_scene":
-			return _handle_run_scene(params)
+			return await _handle_run_scene(params)
 		"editor.stop_scene":
-			return _handle_stop_scene(params)
+			return await _handle_stop_scene(params)
 		"info.project":
 			return _handle_get_project_info(params)
 		"runtime.status":
@@ -286,6 +286,9 @@ func _handle_save_scene(_params: Dictionary) -> Dictionary:
 
 
 func _handle_run_scene(params: Dictionary) -> Dictionary:
+	# Starting a play session opens editor progress UI. Deferring by a full frame
+	# avoids invoking it while Godot is flushing the WebSocket message callback.
+	await editor_interface.get_base_control().get_tree().process_frame
 	var path: String = params.get("path", "")
 	if path.is_empty():
 		editor_interface.play_current_scene()
@@ -295,6 +298,7 @@ func _handle_run_scene(params: Dictionary) -> Dictionary:
 
 
 func _handle_stop_scene(_params: Dictionary) -> Dictionary:
+	await editor_interface.get_base_control().get_tree().process_frame
 	editor_interface.stop_playing_scene()
 	return {"result": {"stopped": true}}
 
