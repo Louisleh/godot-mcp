@@ -66,6 +66,8 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 			return _handle_get_project_info(params)
 		"runtime.status":
 			return await _handle_runtime_status(params)
+		"runtime.inspect_nodes":
+			return await _handle_runtime_inspect_nodes(params)
 		"runtime.wait":
 			return await _handle_runtime_wait(params)
 		"runtime.press_action":
@@ -74,6 +76,8 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 			return await _handle_runtime_release_action(params)
 		"runtime.tap_action":
 			return await _handle_runtime_tap_action(params)
+		"runtime.tap_key":
+			return await _handle_runtime_tap_key(params)
 		"runtime.mouse_move":
 			return await _handle_runtime_mouse_move(params)
 		"runtime.click":
@@ -322,6 +326,10 @@ func _handle_runtime_status(_params: Dictionary) -> Dictionary:
 	return await _send_runtime_request("status", {})
 
 
+func _handle_runtime_inspect_nodes(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("inspect_nodes", params)
+
+
 func _handle_runtime_wait(params: Dictionary) -> Dictionary:
 	var request_params: Dictionary = {}
 	if params.has("frames"):
@@ -349,6 +357,13 @@ func _handle_runtime_tap_action(params: Dictionary) -> Dictionary:
 		"action": str(params.get("action", "")),
 		"frames": int(params.get("frames", 1)),
 		"strength": float(params.get("strength", 1.0))
+	})
+
+
+func _handle_runtime_tap_key(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("tap_key", {
+		"key": str(params.get("key", "")),
+		"frames": int(params.get("frames", 1))
 	})
 
 

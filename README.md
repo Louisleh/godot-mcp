@@ -281,10 +281,12 @@ File-based scene tools accept either scene-root-relative paths like `UI/Label` o
 | `godot_editor_execute_gdscript` | Execute arbitrary GDScript in the editor |
 | `godot_editor_get_project_info` | Get project name, path, Godot version |
 | `godot_runtime_status` | Get runtime harness status from the running game |
+| `godot_runtime_inspect_nodes` | Inspect bounded live node state by group, path, name, or script |
 | `godot_runtime_wait` | Wait for frames or seconds inside the running game (defaults to one frame) |
 | `godot_runtime_press_action` | Press and hold an InputMap action |
 | `godot_runtime_release_action` | Release a pressed InputMap action |
 | `godot_runtime_tap_action` | Tap an InputMap action for a few frames |
+| `godot_runtime_tap_key` | Tap a bounded physical key for raw-input screens |
 | `godot_runtime_mouse_move` | Move the synthetic runtime pointer |
 | `godot_runtime_click` | Click inside the running game viewport |
 | `godot_runtime_type_text` | Type into the focused runtime control |
@@ -363,10 +365,12 @@ The plugin responds to these JSON-RPC methods:
 | `editor.stop_scene` | Stop the running scene |
 | `editor.select_node` | Select a node in the scene tree |
 | `runtime.status` | Get runtime harness status and viewport metadata |
+| `runtime.inspect_nodes` | Inspect bounded JSON-safe live node state |
 | `runtime.wait` | Wait for frames or seconds in the running game (defaults to one frame when omitted) |
 | `runtime.press_action` | Press and hold an InputMap action |
 | `runtime.release_action` | Release a pressed InputMap action |
 | `runtime.tap_action` | Tap an InputMap action |
+| `runtime.tap_key` | Tap a bounded physical key event |
 | `runtime.mouse_move` | Move the synthetic runtime pointer |
 | `runtime.click` | Click inside the running game viewport |
 | `runtime.type_text` | Type into the focused runtime control |

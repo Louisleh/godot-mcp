@@ -44,11 +44,16 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	if _debugger_plugin:
+		_debugger_plugin.shutdown()
+		if _message_handler:
+			_message_handler.debugger_plugin = null
 		remove_debugger_plugin(_debugger_plugin)
+		_debugger_plugin.message_handler = null
 		_debugger_plugin = null
 	if _ws_server:
 		_ws_server.stop()
-		_ws_server.queue_free()
+		remove_child(_ws_server)
+		_ws_server.free()
 		_ws_server = null
 	_message_handler = null
 	_remove_owned_runtime_autoload()
@@ -115,6 +120,21 @@ class AIBridgeDebuggerPlugin extends EditorDebuggerPlugin:
 	var _session_runtime_ready: Dictionary = {}
 	var _pending_runtime_requests: Dictionary = {}
 	var _next_runtime_request_id: int = 1
+
+	func shutdown() -> void:
+		for session_id in _tracked_session_ids:
+			var session = get_session(session_id)
+			if not session:
+				continue
+			var started_callable := Callable(self, "_on_session_started").bind(session_id)
+			if session.started.is_connected(started_callable):
+				session.started.disconnect(started_callable)
+			var stopped_callable := Callable(self, "_on_session_stopped").bind(session_id)
+			if session.stopped.is_connected(stopped_callable):
+				session.stopped.disconnect(stopped_callable)
+		_pending_runtime_requests.clear()
+		_session_runtime_ready.clear()
+		_tracked_session_ids.clear()
 
 	func _has_capture(_prefix: String) -> bool:
 		return true
