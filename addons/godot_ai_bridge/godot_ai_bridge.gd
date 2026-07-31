@@ -11,6 +11,7 @@ var _ws_server: Node
 var _message_handler: RefCounted
 var _debugger_plugin: AIBridgeDebuggerPlugin
 var _port: int = 6550
+var _owns_runtime_autoload: bool = false
 
 
 func _enter_tree() -> void:
@@ -43,13 +44,19 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	if _debugger_plugin:
+		_debugger_plugin.shutdown()
+		if _message_handler:
+			_message_handler.debugger_plugin = null
 		remove_debugger_plugin(_debugger_plugin)
+		_debugger_plugin.message_handler = null
 		_debugger_plugin = null
 	if _ws_server:
 		_ws_server.stop()
-		_ws_server.queue_free()
+		remove_child(_ws_server)
+		_ws_server.free()
 		_ws_server = null
 	_message_handler = null
+	_remove_owned_runtime_autoload()
 
 
 func _ensure_runtime_autoload() -> void:
@@ -59,6 +66,7 @@ func _ensure_runtime_autoload() -> void:
 
 	if normalized_existing.is_empty():
 		add_autoload_singleton(RUNTIME_AUTOLOAD_NAME, RUNTIME_AUTOLOAD_PATH)
+		_owns_runtime_autoload = true
 		return
 
 	if normalized_existing != RUNTIME_AUTOLOAD_PATH:
@@ -66,6 +74,17 @@ func _ensure_runtime_autoload() -> void:
 			"[AI Bridge] Autoload name conflict for %s: %s"
 			% [RUNTIME_AUTOLOAD_NAME, existing_value]
 		)
+
+
+func _remove_owned_runtime_autoload() -> void:
+	if not _owns_runtime_autoload:
+		return
+
+	var autoload_key := "autoload/%s" % RUNTIME_AUTOLOAD_NAME
+	var existing_value := str(ProjectSettings.get_setting(autoload_key, ""))
+	if existing_value.trim_prefix("*") == RUNTIME_AUTOLOAD_PATH:
+		remove_autoload_singleton(RUNTIME_AUTOLOAD_NAME)
+	_owns_runtime_autoload = false
 
 
 func _on_message_received(peer_id: int, message: String) -> void:
@@ -101,6 +120,21 @@ class AIBridgeDebuggerPlugin extends EditorDebuggerPlugin:
 	var _session_runtime_ready: Dictionary = {}
 	var _pending_runtime_requests: Dictionary = {}
 	var _next_runtime_request_id: int = 1
+
+	func shutdown() -> void:
+		for session_id in _tracked_session_ids:
+			var session = get_session(session_id)
+			if not session:
+				continue
+			var started_callable := Callable(self, "_on_session_started").bind(session_id)
+			if session.started.is_connected(started_callable):
+				session.started.disconnect(started_callable)
+			var stopped_callable := Callable(self, "_on_session_stopped").bind(session_id)
+			if session.stopped.is_connected(stopped_callable):
+				session.stopped.disconnect(stopped_callable)
+		_pending_runtime_requests.clear()
+		_session_runtime_ready.clear()
+		_tracked_session_ids.clear()
 
 	func _has_capture(_prefix: String) -> bool:
 		return true

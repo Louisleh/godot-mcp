@@ -48,6 +48,12 @@ It exposes **99 tools** across 13 categories for scene manipulation, script gene
 3. If you want live editor tools, copy `addons/godot_ai_bridge` into your Godot project and enable the plugin.
 4. Start with `godot_help`, then connect to the editor if needed.
 
+Contributors can run `npm test` for the TypeScript contract suite and
+`npm run test:live` for a self-contained Godot editor/runtime smoke test. The
+live test requires a `godot` executable (or `GODOT`/`GODOT4` environment
+variable), copies the bridge into a temporary fixture project, and leaves the
+working tree untouched.
+
 If you only want file-based scene/script/resource editing, you can skip the AI Bridge plugin and use the file tools directly.
 
 If you are also using [`godot-claude-skills`](https://github.com/alexmeckes/godot-claude-skills), prefer its `godot-interactive` skill for persistent inspect/edit/run/debug loops over `godot-mcp`.
@@ -281,10 +287,12 @@ File-based scene tools accept either scene-root-relative paths like `UI/Label` o
 | `godot_editor_execute_gdscript` | Execute arbitrary GDScript in the editor |
 | `godot_editor_get_project_info` | Get project name, path, Godot version |
 | `godot_runtime_status` | Get runtime harness status from the running game |
+| `godot_runtime_inspect_nodes` | Read bounded live node properties by group, path, name, or script |
 | `godot_runtime_wait` | Wait for frames or seconds inside the running game (defaults to one frame) |
 | `godot_runtime_press_action` | Press and hold an InputMap action |
 | `godot_runtime_release_action` | Release a pressed InputMap action |
 | `godot_runtime_tap_action` | Tap an InputMap action for a few frames |
+| `godot_runtime_tap_key` | Tap a bounded physical key for raw-input screens |
 | `godot_runtime_mouse_move` | Move the synthetic runtime pointer |
 | `godot_runtime_click` | Click inside the running game viewport |
 | `godot_runtime_type_text` | Type into the focused runtime control |
@@ -363,10 +371,12 @@ The plugin responds to these JSON-RPC methods:
 | `editor.stop_scene` | Stop the running scene |
 | `editor.select_node` | Select a node in the scene tree |
 | `runtime.status` | Get runtime harness status and viewport metadata |
+| `runtime.inspect_nodes` | Inspect bounded JSON-safe live node state |
 | `runtime.wait` | Wait for frames or seconds in the running game (defaults to one frame when omitted) |
 | `runtime.press_action` | Press and hold an InputMap action |
 | `runtime.release_action` | Release a pressed InputMap action |
 | `runtime.tap_action` | Tap an InputMap action |
+| `runtime.tap_key` | Tap a bounded physical key event |
 | `runtime.mouse_move` | Move the synthetic runtime pointer |
 | `runtime.click` | Click inside the running game viewport |
 | `runtime.type_text` | Type into the focused runtime control |

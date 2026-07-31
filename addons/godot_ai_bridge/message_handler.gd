@@ -59,13 +59,15 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 		"editor.save_scene":
 			return _handle_save_scene(params)
 		"editor.run_scene":
-			return _handle_run_scene(params)
+			return await _handle_run_scene(params)
 		"editor.stop_scene":
-			return _handle_stop_scene(params)
+			return await _handle_stop_scene(params)
 		"info.project":
 			return _handle_get_project_info(params)
 		"runtime.status":
 			return await _handle_runtime_status(params)
+		"runtime.inspect_nodes":
+			return await _handle_runtime_inspect_nodes(params)
 		"runtime.wait":
 			return await _handle_runtime_wait(params)
 		"runtime.press_action":
@@ -74,6 +76,8 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 			return await _handle_runtime_release_action(params)
 		"runtime.tap_action":
 			return await _handle_runtime_tap_action(params)
+		"runtime.tap_key":
+			return await _handle_runtime_tap_key(params)
 		"runtime.mouse_move":
 			return await _handle_runtime_mouse_move(params)
 		"runtime.click":
@@ -286,6 +290,9 @@ func _handle_save_scene(_params: Dictionary) -> Dictionary:
 
 
 func _handle_run_scene(params: Dictionary) -> Dictionary:
+	# Starting a play session opens editor progress UI. Deferring by a full frame
+	# avoids invoking it while Godot is flushing the WebSocket message callback.
+	await editor_interface.get_base_control().get_tree().process_frame
 	var path: String = params.get("path", "")
 	if path.is_empty():
 		editor_interface.play_current_scene()
@@ -295,6 +302,7 @@ func _handle_run_scene(params: Dictionary) -> Dictionary:
 
 
 func _handle_stop_scene(_params: Dictionary) -> Dictionary:
+	await editor_interface.get_base_control().get_tree().process_frame
 	editor_interface.stop_playing_scene()
 	return {"result": {"stopped": true}}
 
@@ -316,6 +324,10 @@ func _handle_refresh_filesystem(_params: Dictionary) -> Dictionary:
 
 func _handle_runtime_status(_params: Dictionary) -> Dictionary:
 	return await _send_runtime_request("status", {})
+
+
+func _handle_runtime_inspect_nodes(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("inspect_nodes", params)
 
 
 func _handle_runtime_wait(params: Dictionary) -> Dictionary:
@@ -345,6 +357,13 @@ func _handle_runtime_tap_action(params: Dictionary) -> Dictionary:
 		"action": str(params.get("action", "")),
 		"frames": int(params.get("frames", 1)),
 		"strength": float(params.get("strength", 1.0))
+	})
+
+
+func _handle_runtime_tap_key(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("tap_key", {
+		"key": str(params.get("key", "")),
+		"frames": int(params.get("frames", 1))
 	})
 
 

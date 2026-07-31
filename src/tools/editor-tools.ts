@@ -497,6 +497,57 @@ export function registerEditorTools(
     },
   });
 
+  tools.set("godot_runtime_inspect_nodes", {
+    description:
+      "Read bounded live runtime node state by group, exact path, name fragment, or script path and return selected JSON-safe properties without invoking runtime methods.",
+    inputSchema: z.object({
+      group: z.string().optional().describe("Optional SceneTree group filter"),
+      path: z.string().optional().describe("Optional exact live NodePath filter"),
+      nameContains: z.string().optional().describe("Optional case-insensitive node-name fragment"),
+      scriptPath: z.string().optional().describe("Optional exact res:// script path filter"),
+      properties: z.array(z.string()).max(32).optional().default([]).describe("Property paths to read, including dotted child properties"),
+      maxResults: z.number().int().min(1).max(128).optional().default(32),
+      maxVisited: z
+        .number()
+        .int()
+        .min(1)
+        .max(16384)
+        .optional()
+        .default(4096)
+        .describe("Maximum candidate nodes to visit before stopping the inspection"),
+    }).strict(),
+    handler: async (args) => {
+      ensureConnected();
+      const {
+        group,
+        path,
+        nameContains,
+        scriptPath,
+        properties = [],
+        maxResults = 32,
+        maxVisited = 4096,
+      } = args as {
+        group?: string;
+        path?: string;
+        nameContains?: string;
+        scriptPath?: string;
+        properties?: string[];
+        maxResults?: number;
+        maxVisited?: number;
+      };
+
+      return sendRequest("runtime.inspect_nodes", {
+        group,
+        path,
+        name_contains: nameContains,
+        script_path: scriptPath,
+        properties,
+        max_results: maxResults,
+        max_visited: maxVisited,
+      });
+    },
+  });
+
   tools.set("godot_runtime_wait", {
     description:
       "Wait for a number of frames or seconds in the running game before continuing. If omitted, waits for one frame.",
@@ -613,6 +664,28 @@ export function registerEditorTools(
 
       const result = await sendRequest("runtime.mouse_move", { x, y });
       return result;
+    },
+  });
+
+  tools.set("godot_runtime_tap_key", {
+    description:
+      "Tap a physical keyboard key in the running game. Use this for screens that intentionally require raw key events rather than InputMap actions.",
+    inputSchema: z.object({
+      key: z
+        .enum(["enter", "escape", "space", "up", "down", "left", "right"])
+        .describe("Supported physical key name"),
+      frames: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .default(1)
+        .describe("How many frames to hold the key before release"),
+    }),
+    handler: async (args) => {
+      ensureConnected();
+      const { key, frames = 1 } = args as { key: string; frames?: number };
+      return sendRequest("runtime.tap_key", { key, frames });
     },
   });
 

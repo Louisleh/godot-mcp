@@ -1,0 +1,12 @@
+[application]
+config/name="Godot MCP Runtime Fixture"
+run/main_scene="res://main.tscn"
+
+[editor_plugins]
+enabled=PackedStringArray("res://addons/godot_ai_bridge/plugin.cfg")
+
+[editor]
+run/main_run_args="--headless"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"

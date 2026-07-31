@@ -2,6 +2,7 @@ extends Node
 ## Runtime automation harness for the Godot AI Bridge.
 
 const MESSAGE_PREFIX := "godot_runtime"
+const MAX_SERIALIZATION_DEPTH := 4
 
 var _capture_callable: Callable
 var _mouse_position: Vector2 = Vector2.ZERO
@@ -50,6 +51,8 @@ func _process_request_async(request_id: int, method: String, params: Dictionary)
 	match method:
 		"status":
 			response = {"success": true, "result": _build_status_payload()}
+		"inspect_nodes":
+			response = {"success": true, "result": _handle_inspect_nodes(params)}
 		"wait":
 			response = {"success": true, "result": await _handle_wait(params)}
 		"press_action":
@@ -58,6 +61,8 @@ func _process_request_async(request_id: int, method: String, params: Dictionary)
 			response = {"success": true, "result": await _handle_release_action(params)}
 		"tap_action":
 			response = {"success": true, "result": await _handle_tap_action(params)}
+		"tap_key":
+			response = {"success": true, "result": await _handle_tap_key(params)}
 		"mouse_move":
 			response = {"success": true, "result": await _handle_mouse_move(params)}
 		"click":
@@ -73,6 +78,176 @@ func _process_request_async(request_id: int, method: String, params: Dictionary)
 			}
 
 	_send_response(request_id, response)
+
+
+func _handle_inspect_nodes(params: Dictionary) -> Dictionary:
+	var group := str(params.get("group", "")).strip_edges()
+	var path_filter := str(params.get("path", "")).strip_edges()
+	var name_contains := str(params.get("name_contains", "")).strip_edges().to_lower()
+	var script_path := str(params.get("script_path", "")).strip_edges()
+	var property_names: Array = params.get("properties", []) if params.get("properties", []) is Array else []
+	var max_results := clampi(int(params.get("max_results", 32)), 1, 128)
+	var max_visited := clampi(int(params.get("max_visited", 4096)), 1, 16384)
+
+	var matches: Array[Dictionary] = []
+	var visited_count := 0
+	var truncated := false
+	if not group.is_empty():
+		var group_nodes := get_tree().get_nodes_in_group(group)
+		for candidate in group_nodes:
+			if visited_count >= max_visited:
+				truncated = true
+				break
+			visited_count += 1
+			if not candidate is Node:
+				continue
+			var node: Node = candidate as Node
+			var node_script_path := _runtime_node_script_path(node)
+			if not _runtime_node_matches(node, node_script_path, path_filter, name_contains, script_path):
+				continue
+			if matches.size() >= max_results:
+				truncated = true
+				break
+			matches.append(_serialize_runtime_node(node, node_script_path, property_names))
+	else:
+		var pending: Array[Node] = []
+		var scene := get_tree().current_scene
+		if scene != null:
+			pending.append(scene)
+		while not pending.is_empty():
+			if visited_count >= max_visited:
+				truncated = true
+				break
+			var node: Node = pending.pop_back()
+			visited_count += 1
+			var children: Array[Node] = node.get_children()
+			for child_index in range(children.size() - 1, -1, -1):
+				var child: Node = children[child_index]
+				pending.append(child)
+			var node_script_path := _runtime_node_script_path(node)
+			if not _runtime_node_matches(node, node_script_path, path_filter, name_contains, script_path):
+				continue
+			if matches.size() >= max_results:
+				truncated = true
+				break
+			matches.append(_serialize_runtime_node(node, node_script_path, property_names))
+
+	return {
+		"scene_path": get_tree().current_scene.scene_file_path if get_tree().current_scene else "",
+		"count": matches.size(),
+		"visited_count": visited_count,
+		"truncated": truncated,
+		"nodes": matches
+	}
+
+
+func _runtime_node_script_path(node: Node) -> String:
+	var script := node.get_script()
+	if script is Script:
+		return str((script as Script).resource_path)
+	return ""
+
+
+func _runtime_node_matches(
+	node: Node,
+	node_script_path: String,
+	path_filter: String,
+	name_contains: String,
+	script_path: String
+) -> bool:
+	if not path_filter.is_empty() and str(node.get_path()) != path_filter:
+		return false
+	if not name_contains.is_empty() and not name_contains in str(node.name).to_lower():
+		return false
+	if not script_path.is_empty() and node_script_path != script_path:
+		return false
+	return true
+
+
+func _serialize_runtime_node(
+	node: Node,
+	script_path: String,
+	property_names: Array
+) -> Dictionary:
+	var payload := {
+		"name": str(node.name),
+		"path": str(node.get_path()),
+		"class": node.get_class(),
+		"script_path": script_path,
+		"groups": Array(node.get_groups()).map(func(value: Variant) -> String: return str(value)),
+		"properties": {}
+	}
+	if node is Node3D:
+		payload["global_position"] = _vector3_dict((node as Node3D).global_position)
+	elif node is Node2D:
+		payload["global_position"] = _vector2_dict((node as Node2D).global_position)
+
+	var safe_properties: Dictionary = payload["properties"]
+	for raw_name in property_names.slice(0, 32):
+		var property_name := str(raw_name).strip_edges()
+		if property_name.is_empty():
+			continue
+		safe_properties[property_name] = _variant_to_json_safe(_resolve_property_path(node, property_name))
+
+	return payload
+
+
+func _resolve_property_path(root: Object, property_path: String) -> Variant:
+	var value: Variant = root
+	for segment in property_path.split(".", false):
+		if value is Object:
+			var object := value as Object
+			if not _object_has_property(object, segment):
+				return {"error": "property_not_found", "segment": segment}
+			value = object.get(segment)
+		elif value is Dictionary:
+			value = (value as Dictionary).get(segment, {"error": "key_not_found", "segment": segment})
+		else:
+			return {"error": "non_object_segment", "segment": segment}
+	return value
+
+
+func _object_has_property(object: Object, property_name: String) -> bool:
+	for property in object.get_property_list():
+		if str(property.get("name", "")) == property_name:
+			return true
+	return false
+
+
+func _variant_to_json_safe(value: Variant, depth: int = 0) -> Variant:
+	match typeof(value):
+		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
+			return value
+		TYPE_STRING_NAME, TYPE_NODE_PATH:
+			return str(value)
+		TYPE_VECTOR2:
+			return _vector2_dict(value)
+		TYPE_VECTOR3:
+			return _vector3_dict(value)
+		TYPE_COLOR:
+			var color := value as Color
+			return {"r": color.r, "g": color.g, "b": color.b, "a": color.a}
+		TYPE_ARRAY:
+			if depth >= MAX_SERIALIZATION_DEPTH:
+				return {"truncated": true, "reason": "max_depth"}
+			var safe_array: Array = []
+			for entry in (value as Array).slice(0, 32):
+				safe_array.append(_variant_to_json_safe(entry, depth + 1))
+			return safe_array
+		TYPE_DICTIONARY:
+			if depth >= MAX_SERIALIZATION_DEPTH:
+				return {"truncated": true, "reason": "max_depth"}
+			var safe_dictionary := {}
+			for key in (value as Dictionary).keys().slice(0, 32):
+				safe_dictionary[str(key)] = _variant_to_json_safe((value as Dictionary)[key], depth + 1)
+			return safe_dictionary
+		TYPE_OBJECT:
+			if value == null:
+				return null
+			var object := value as Object
+			return {"class": object.get_class(), "instance_id": object.get_instance_id()}
+		_:
+			return str(value)
 
 
 func _handle_wait(params: Dictionary) -> Dictionary:
@@ -132,6 +307,20 @@ func _handle_tap_action(params: Dictionary) -> Dictionary:
 		"frames": frames,
 		"strength": strength
 	}
+
+
+func _handle_tap_key(params: Dictionary) -> Dictionary:
+	var key_name := _require_non_empty_string(params, "key").to_lower()
+	var frames := max(1, int(params.get("frames", 1)))
+	var keycode := _keycode_from_name(key_name)
+	if keycode == KEY_NONE:
+		return {"error": "Unsupported key name: " + key_name}
+
+	await _push_key_event(keycode, true)
+	for _i in range(frames):
+		await get_tree().process_frame
+	await _push_key_event(keycode, false)
+	return {"key": key_name, "frames": frames}
 
 
 func _handle_mouse_move(params: Dictionary) -> Dictionary:
@@ -223,6 +412,35 @@ func _push_action_event(action: String, pressed: bool, strength: float) -> void:
 	Input.parse_input_event(event)
 
 
+func _push_key_event(keycode: Key, pressed: bool) -> void:
+	var event := InputEventKey.new()
+	event.keycode = keycode
+	event.physical_keycode = keycode
+	event.pressed = pressed
+	_get_root_viewport().push_input(event, true)
+	await get_tree().process_frame
+
+
+func _keycode_from_name(key_name: String) -> Key:
+	match key_name:
+		"enter", "return":
+			return KEY_ENTER
+		"escape", "esc":
+			return KEY_ESCAPE
+		"space":
+			return KEY_SPACE
+		"up":
+			return KEY_UP
+		"down":
+			return KEY_DOWN
+		"left":
+			return KEY_LEFT
+		"right":
+			return KEY_RIGHT
+		_:
+			return KEY_NONE
+
+
 func _push_mouse_motion(target: Vector2) -> void:
 	var root := _get_root_viewport()
 	var event := InputEventMouseMotion.new()
@@ -291,6 +509,9 @@ func _build_status_payload() -> Dictionary:
 		"available": true,
 		"scene_root": current_scene.name if current_scene else "",
 		"scene_path": current_scene.scene_file_path if current_scene else "",
+		"paused": get_tree().paused,
+		"node_count": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+		"physics_frame": Engine.get_physics_frames(),
 		"viewport_size": _vector2_dict(root.get_visible_rect().size) if root else _vector2_dict(Vector2.ZERO),
 		"mouse_position": _vector2_dict(_mouse_position),
 		"focused_control": focused_control
@@ -336,6 +557,14 @@ func _vector2_dict(value: Vector2) -> Dictionary:
 	return {
 		"x": value.x,
 		"y": value.y
+	}
+
+
+func _vector3_dict(value: Vector3) -> Dictionary:
+	return {
+		"x": value.x,
+		"y": value.y,
+		"z": value.z
 	}
 
 

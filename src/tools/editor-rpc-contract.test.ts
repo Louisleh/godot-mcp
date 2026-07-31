@@ -54,6 +54,31 @@ describe("editor RPC contract", () => {
     expect(editorTools).toContain("state.editorPort = port;");
   });
 
+  it("provides bounded live node inspection through the runtime bridge", () => {
+    const editorTools = readProjectFile("src/tools/editor-tools.ts");
+    const runtimeBridge = readProjectFile("addons/godot_ai_bridge/runtime_bridge.gd");
+
+    expect(editorTools).toContain('tools.set("godot_runtime_inspect_nodes"');
+    expect(editorTools).toContain('sendRequest("runtime.inspect_nodes"');
+    expect(runtimeBridge).toContain('"inspect_nodes":');
+    expect(runtimeBridge).toContain("func _handle_inspect_nodes");
+    expect(runtimeBridge).toContain("clampi(int(params.get(\"max_results\", 32)), 1, 128)");
+    expect(runtimeBridge).toContain("clampi(int(params.get(\"max_visited\", 4096)), 1, 16384)");
+    expect(runtimeBridge).toContain('"visited_count": visited_count');
+    expect(runtimeBridge).not.toContain("node.call(method_name)");
+    expect(runtimeBridge).toContain("const MAX_SERIALIZATION_DEPTH := 4");
+    expect(runtimeBridge).toContain('"paused": get_tree().paused');
+  });
+
+  it("disconnects debugger-session signals during plugin shutdown", () => {
+    const plugin = readProjectFile("addons/godot_ai_bridge/godot_ai_bridge.gd");
+
+    expect(plugin).toContain("_debugger_plugin.shutdown()");
+    expect(plugin).toContain("func shutdown() -> void:");
+    expect(plugin).toContain("session.started.disconnect(started_callable)");
+    expect(plugin).toContain("session.stopped.disconnect(stopped_callable)");
+  });
+
   it("documents all plugin RPC methods in README", () => {
     const readme = readProjectFile("README.md");
     const pluginHandler = readProjectFile("addons/godot_ai_bridge/message_handler.gd");
