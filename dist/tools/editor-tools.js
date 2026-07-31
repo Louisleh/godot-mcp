@@ -385,27 +385,34 @@ export function registerEditorTools(tools, state) {
         },
     });
     tools.set("godot_runtime_inspect_nodes", {
-        description: "Inspect live runtime nodes by group, exact path, name fragment, or script path and return selected JSON-safe properties or zero-argument method results.",
+        description: "Read bounded live runtime node state by group, exact path, name fragment, or script path and return selected JSON-safe properties without invoking runtime methods.",
         inputSchema: z.object({
             group: z.string().optional().describe("Optional SceneTree group filter"),
             path: z.string().optional().describe("Optional exact live NodePath filter"),
             nameContains: z.string().optional().describe("Optional case-insensitive node-name fragment"),
             scriptPath: z.string().optional().describe("Optional exact res:// script path filter"),
             properties: z.array(z.string()).max(32).optional().default([]).describe("Property paths to read, including dotted child properties"),
-            methods: z.array(z.string()).max(16).optional().default([]).describe("Zero-argument methods to call for inspection"),
             maxResults: z.number().int().min(1).max(128).optional().default(32),
-        }),
+            maxVisited: z
+                .number()
+                .int()
+                .min(1)
+                .max(16384)
+                .optional()
+                .default(4096)
+                .describe("Maximum candidate nodes to visit before stopping the inspection"),
+        }).strict(),
         handler: async (args) => {
             ensureConnected();
-            const { group, path, nameContains, scriptPath, properties = [], methods = [], maxResults = 32, } = args;
+            const { group, path, nameContains, scriptPath, properties = [], maxResults = 32, maxVisited = 4096, } = args;
             return sendRequest("runtime.inspect_nodes", {
                 group,
                 path,
                 name_contains: nameContains,
                 script_path: scriptPath,
                 properties,
-                methods,
                 max_results: maxResults,
+                max_visited: maxVisited,
             });
         },
     });

@@ -63,6 +63,10 @@ describe("editor RPC contract", () => {
     expect(runtimeBridge).toContain('"inspect_nodes":');
     expect(runtimeBridge).toContain("func _handle_inspect_nodes");
     expect(runtimeBridge).toContain("clampi(int(params.get(\"max_results\", 32)), 1, 128)");
+    expect(runtimeBridge).toContain("clampi(int(params.get(\"max_visited\", 4096)), 1, 16384)");
+    expect(runtimeBridge).toContain('"visited_count": visited_count');
+    expect(runtimeBridge).not.toContain("node.call(method_name)");
+    expect(runtimeBridge).toContain("const MAX_SERIALIZATION_DEPTH := 4");
     expect(runtimeBridge).toContain('"paused": get_tree().paused');
   });
 

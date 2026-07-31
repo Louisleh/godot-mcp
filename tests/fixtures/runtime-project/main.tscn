@@ -1,0 +1,16 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://main.gd" type="Script" id="1"]
+
+[node name="AuditRoot" type="Node3D" groups=["audit_nodes"]]
+script = ExtResource("1")
+
+[node name="ExactA" type="Node" parent="." groups=["exact_nodes"]]
+
+[node name="ExactB" type="Node" parent="." groups=["exact_nodes"]]
+
+[node name="OverflowA" type="Node" parent="." groups=["overflow_nodes"]]
+
+[node name="OverflowB" type="Node" parent="." groups=["overflow_nodes"]]
+
+[node name="OverflowC" type="Node" parent="." groups=["overflow_nodes"]]

@@ -2,6 +2,7 @@ extends Node
 ## Runtime automation harness for the Godot AI Bridge.
 
 const MESSAGE_PREFIX := "godot_runtime"
+const MAX_SERIALIZATION_DEPTH := 4
 
 var _capture_callable: Callable
 var _mouse_position: Vector2 = Vector2.ZERO
@@ -85,62 +86,88 @@ func _handle_inspect_nodes(params: Dictionary) -> Dictionary:
 	var name_contains := str(params.get("name_contains", "")).strip_edges().to_lower()
 	var script_path := str(params.get("script_path", "")).strip_edges()
 	var property_names: Array = params.get("properties", []) if params.get("properties", []) is Array else []
-	var method_names: Array = params.get("methods", []) if params.get("methods", []) is Array else []
 	var max_results := clampi(int(params.get("max_results", 32)), 1, 128)
-	var roots: Array[Node] = []
-
-	if not group.is_empty():
-		for candidate in get_tree().get_nodes_in_group(group):
-			if candidate is Node:
-				roots.append(candidate)
-	else:
-		var scene := get_tree().current_scene
-		if scene != null:
-			roots.append(scene)
-
-	var candidates: Array[Node] = []
-	for root in roots:
-		_collect_nodes(root, candidates, group.is_empty())
+	var max_visited := clampi(int(params.get("max_visited", 4096)), 1, 16384)
 
 	var matches: Array[Dictionary] = []
-	for node in candidates:
-		if matches.size() >= max_results:
-			break
-		var node_path := str(node.get_path())
-		var node_script_path := ""
-		var script := node.get_script()
-		if script is Script:
-			node_script_path = str((script as Script).resource_path)
-		if not path_filter.is_empty() and node_path != path_filter:
-			continue
-		if not name_contains.is_empty() and not name_contains in str(node.name).to_lower():
-			continue
-		if not script_path.is_empty() and node_script_path != script_path:
-			continue
-		matches.append(_serialize_runtime_node(node, node_script_path, property_names, method_names))
+	var visited_count := 0
+	var truncated := false
+	if not group.is_empty():
+		var group_nodes := get_tree().get_nodes_in_group(group)
+		for candidate in group_nodes:
+			if visited_count >= max_visited:
+				truncated = true
+				break
+			visited_count += 1
+			if not candidate is Node:
+				continue
+			var node: Node = candidate as Node
+			var node_script_path := _runtime_node_script_path(node)
+			if not _runtime_node_matches(node, node_script_path, path_filter, name_contains, script_path):
+				continue
+			if matches.size() >= max_results:
+				truncated = true
+				break
+			matches.append(_serialize_runtime_node(node, node_script_path, property_names))
+	else:
+		var pending: Array[Node] = []
+		var scene := get_tree().current_scene
+		if scene != null:
+			pending.append(scene)
+		while not pending.is_empty():
+			if visited_count >= max_visited:
+				truncated = true
+				break
+			var node: Node = pending.pop_back()
+			visited_count += 1
+			var children: Array[Node] = node.get_children()
+			for child_index in range(children.size() - 1, -1, -1):
+				var child: Node = children[child_index]
+				pending.append(child)
+			var node_script_path := _runtime_node_script_path(node)
+			if not _runtime_node_matches(node, node_script_path, path_filter, name_contains, script_path):
+				continue
+			if matches.size() >= max_results:
+				truncated = true
+				break
+			matches.append(_serialize_runtime_node(node, node_script_path, property_names))
 
 	return {
 		"scene_path": get_tree().current_scene.scene_file_path if get_tree().current_scene else "",
 		"count": matches.size(),
-		"truncated": matches.size() >= max_results,
+		"visited_count": visited_count,
+		"truncated": truncated,
 		"nodes": matches
 	}
 
 
-func _collect_nodes(root: Node, output: Array[Node], recursive: bool) -> void:
-	output.append(root)
-	if not recursive:
-		return
-	for child in root.get_children():
-		if child is Node:
-			_collect_nodes(child, output, true)
+func _runtime_node_script_path(node: Node) -> String:
+	var script := node.get_script()
+	if script is Script:
+		return str((script as Script).resource_path)
+	return ""
+
+
+func _runtime_node_matches(
+	node: Node,
+	node_script_path: String,
+	path_filter: String,
+	name_contains: String,
+	script_path: String
+) -> bool:
+	if not path_filter.is_empty() and str(node.get_path()) != path_filter:
+		return false
+	if not name_contains.is_empty() and not name_contains in str(node.name).to_lower():
+		return false
+	if not script_path.is_empty() and node_script_path != script_path:
+		return false
+	return true
 
 
 func _serialize_runtime_node(
 	node: Node,
 	script_path: String,
-	property_names: Array,
-	method_names: Array
+	property_names: Array
 ) -> Dictionary:
 	var payload := {
 		"name": str(node.name),
@@ -148,8 +175,7 @@ func _serialize_runtime_node(
 		"class": node.get_class(),
 		"script_path": script_path,
 		"groups": Array(node.get_groups()).map(func(value: Variant) -> String: return str(value)),
-		"properties": {},
-		"methods": {}
+		"properties": {}
 	}
 	if node is Node3D:
 		payload["global_position"] = _vector3_dict((node as Node3D).global_position)
@@ -162,16 +188,6 @@ func _serialize_runtime_node(
 		if property_name.is_empty():
 			continue
 		safe_properties[property_name] = _variant_to_json_safe(_resolve_property_path(node, property_name))
-
-	var safe_methods: Dictionary = payload["methods"]
-	for raw_name in method_names.slice(0, 16):
-		var method_name := str(raw_name).strip_edges()
-		if method_name.is_empty():
-			continue
-		if node.has_method(method_name):
-			safe_methods[method_name] = _variant_to_json_safe(node.call(method_name))
-		else:
-			safe_methods[method_name] = {"error": "method_not_found"}
 
 	return payload
 
@@ -198,7 +214,7 @@ func _object_has_property(object: Object, property_name: String) -> bool:
 	return false
 
 
-func _variant_to_json_safe(value: Variant) -> Variant:
+func _variant_to_json_safe(value: Variant, depth: int = 0) -> Variant:
 	match typeof(value):
 		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
 			return value
@@ -212,14 +228,18 @@ func _variant_to_json_safe(value: Variant) -> Variant:
 			var color := value as Color
 			return {"r": color.r, "g": color.g, "b": color.b, "a": color.a}
 		TYPE_ARRAY:
+			if depth >= MAX_SERIALIZATION_DEPTH:
+				return {"truncated": true, "reason": "max_depth"}
 			var safe_array: Array = []
 			for entry in (value as Array).slice(0, 32):
-				safe_array.append(_variant_to_json_safe(entry))
+				safe_array.append(_variant_to_json_safe(entry, depth + 1))
 			return safe_array
 		TYPE_DICTIONARY:
+			if depth >= MAX_SERIALIZATION_DEPTH:
+				return {"truncated": true, "reason": "max_depth"}
 			var safe_dictionary := {}
 			for key in (value as Dictionary).keys().slice(0, 32):
-				safe_dictionary[str(key)] = _variant_to_json_safe((value as Dictionary)[key])
+				safe_dictionary[str(key)] = _variant_to_json_safe((value as Dictionary)[key], depth + 1)
 			return safe_dictionary
 		TYPE_OBJECT:
 			if value == null:

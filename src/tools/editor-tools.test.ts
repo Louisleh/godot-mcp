@@ -29,14 +29,20 @@ describe("editor tools", () => {
       inspectTool?.inputSchema.parse({
         group: "enemies",
         properties: ["health", "definition.max_health"],
-        methods: ["is_on_floor"],
       })
     ).toMatchObject({
       group: "enemies",
       maxResults: 32,
+      maxVisited: 4096,
     });
     expect(() =>
       inspectTool?.inputSchema.parse({ maxResults: 129 })
+    ).toThrow();
+    expect(() =>
+      inspectTool?.inputSchema.parse({ maxVisited: 16385 })
+    ).toThrow();
+    expect(() =>
+      inspectTool?.inputSchema.parse({ methods: ["queue_free"] })
     ).toThrow();
   });
 
